@@ -5,11 +5,11 @@
     vars:
         certbot_create_extra_args:
         certbot_create_method: 'webroot'
-        certbot_admin_email: change-email.com
+        certbot_admin_email: "{{ certbot_admin_email }}"
         certbot_create_if_missing: true
         certbot_certs:
             -   domains:
-                    - change-domain.com
+                    - "{{ jenkins_domain }}"
                 webroot: "/var/www/html/"
 
     pre_tasks:
@@ -37,4 +37,4 @@
             when: port_check.failed == true
 
     roles:
-        - geerlingguy-certbot
+        - geerlingguy.certbot

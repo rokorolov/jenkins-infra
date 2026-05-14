@@ -1,7 +1,7 @@
 ---
 -   name: Docker cache configuration
-    template:
-        src: files/daemon.json.j2
+    ansible.builtin.template:
+        src: daemon.json.j2
         dest: "{{ config_path }}"
         owner: root
         group: root

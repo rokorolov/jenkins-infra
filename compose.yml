@@ -1,6 +1,6 @@
 services:
     nginx:
-        image: nginx:alpine
+        image: nginx:1.31.0-alpine
         restart: always
         ports:
             - "8000:8000"
@@ -24,7 +24,7 @@ services:
             - docker
 
     docker:
-        image: docker:dind
+        image: docker:29.4.3-dind
         privileged: true
         environment:
             DOCKER_TLS_CERTDIR: /certs

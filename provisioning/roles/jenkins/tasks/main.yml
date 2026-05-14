@@ -1,2 +1,3 @@
 -   import_tasks: create_deploy_user.yml
 -   import_tasks: add_docker_dind_prune.yml
+-   import_tasks: deploy_nginx_config.yml

@@ -7,6 +7,10 @@ all:
                     ansible_user: root
                     ansible_host: 0.0.0.0
                     ansible_port: 22
+                    ansible_python_interpreter: /usr/bin/python3
+                    jenkins_domain: your-domain.com
+                    certbot_admin_email: your-email@example.com
+                    cache_registry: https://your-cache-registry.example.com
         agent:
             hosts:
                 agent-1:

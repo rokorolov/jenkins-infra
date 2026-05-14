@@ -1,0 +1,4 @@
+---
+roles:
+  - name: geerlingguy.certbot
+    version: "5.4.1"

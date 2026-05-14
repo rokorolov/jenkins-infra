@@ -1,2 +1,2 @@
 config_path: /etc/docker/daemon.json
-cache_registry: https://cache-registry.rokorolov.eu
+cache_registry: ""
