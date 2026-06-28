@@ -14,26 +14,30 @@
 
     pre_tasks:
         -   name: Update apt cache.
-            apt: update_cache=true cache_valid_time=600
+            ansible.builtin.apt:
+                update_cache: true
+                cache_valid_time: 600
             changed_when: false
 
         -   name: Install cron (Debian).
-            apt: name=cron state=present
+            ansible.builtin.apt:
+                name: cron
+                state: present
 
         -   name: Check if server is running
-            wait_for:
+            ansible.builtin.wait_for:
                 port: 80
                 timeout: 1
             register: port_check
             ignore_errors: yes
 
         -   name: Up certbot standalone Apache
-            shell: "docker run -d --name apache -v /var/www/html:/usr/local/apache2/htdocs/ -p 80:80 httpd:2.4"
+            ansible.builtin.shell: "docker run -d --name apache -v /var/www/html:/usr/local/apache2/htdocs/ -p 80:80 httpd:2.4"
             when: port_check.failed == true
 
     post_tasks:
         -   name: Down certbot Apache
-            shell: "docker rm -f apache"
+            ansible.builtin.shell: "docker rm -f apache"
             when: port_check.failed == true
 
     roles:
