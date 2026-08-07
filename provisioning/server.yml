@@ -9,3 +9,11 @@
             vars:
                 config_path: /etc/docker/dind-daemon.json
         - jenkins
+
+-   name: Set Up agent
+    hosts: agent
+    remote_user: root
+    roles:
+        - swap
+        - docker
+        - agent

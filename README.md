@@ -18,11 +18,17 @@ Jenkins (8080)
    │                                         Isolated daemon for pipeline builds
    │                                         daemon.json ← host: /etc/docker/dind-daemon.json
    │
-   └── (optional) registry mirror ────────▶ Docker Registry Mirror
-                                             Configured via cache_registry variable
+   ├── (optional) registry mirror ────────▶ Docker Registry Mirror
+   │                                         Configured via cache_registry variable
+   │
+   └── SSH ───────────────────────────────▶ Build agent(s)
+                                             Separate host(s); runs pipeline steps
+                                             instead of the built-in (controller) node
 ```
 
 Jenkins communicates with a Docker-in-Docker sidecar over mutual TLS on port 2376. Certificates are generated automatically by the DinD container and shared via a named volume. The Nginx config and SSL certificates are managed by Ansible and mounted into the container from the host — they are not part of the deployed application files.
+
+Build agents are separate hosts, provisioned by Ansible and connected over SSH, so pipeline code never executes inside the controller's own JVM/container — see [Set up a build agent](#set-up-a-build-agent-optional).
 
 ## Prerequisites
 
@@ -68,7 +74,8 @@ Jenkins communicates with a Docker-in-Docker sidecar over mutual TLS on port 237
         ├── swap/                    # Creates a swapfile (auto-sized: 2× RAM if ≤1 GB, else 2 GB)
         ├── docker/                  # Installs Docker Engine + daily host prune cron (1 am, >72 h)
         ├── docker-cache/            # Writes dind-daemon.json to configure a registry mirror
-        └── jenkins/                 # Creates deploy user, adds DinD prune cron, renders Nginx config
+        ├── jenkins/                 # Creates deploy user, adds DinD prune cron, renders Nginx config
+        └── agent/                   # Creates jenkins agent user, generates and authorizes the controller's SSH key
 ```
 
 ## Local development
@@ -127,6 +134,8 @@ Edit `provisioning/hosts.yml` and fill in your values:
 
 `provisioning/hosts.yml` is listed in `.gitignore` — it must never be committed.
 
+The `agent` group is optional — only fill it in if you want [distributed builds](#set-up-a-build-agent-optional). It needs no variables beyond the standard `ansible_*` connection settings; the agent role handles the rest.
+
 ### 2. Provision the server
 
 Installs swap space, Docker Engine, configures the DinD daemon registry mirror, creates the `deploy` system user, and renders the Nginx config template to `/etc/jenkins/nginx/` on the server.
@@ -170,6 +179,27 @@ Retrieve the initial admin password from the production instance:
 ```bash
 cd provisioning && make show-initial-password
 ```
+
+### 6. Set up a build agent (optional)
+
+By default Jenkins runs pipeline steps on the built-in node — the controller itself — which Jenkins flags as a security risk: pipeline code gets access to the controller's JVM, credentials store, and admin API. This step moves build execution to a separate, dedicated host connected over SSH.
+
+Add an `agent` host to `provisioning/hosts.yml` (see `provisioning/hosts.yml.dist` for the shape), then provision it:
+
+```bash
+cd provisioning && make server
+```
+
+This installs Docker, Java, and Git on the agent host, creates a `jenkins` system user, and generates an SSH keypair at `provisioning/files/agent_rsa` (gitignored) that's authorized on the agent for that user. Re-running `make server` is safe — the keypair is only generated once and reused for any additional agent hosts.
+
+Register the node in Jenkins (one-time, via the UI — this mirrors the manual first-login setup above and needs no extra plugin surface beyond `ssh-slaves`, already in `plugins.txt`):
+
+1. **Manage Jenkins → Credentials → System → Global credentials → Add Credentials.** Kind: *SSH Username with private key*. Username: `jenkins`. Private key: paste the contents of `provisioning/files/agent_rsa`.
+2. **Manage Jenkins → Nodes → New Node.** Type: *Permanent Agent*.
+   - Remote root directory: `/home/jenkins/agent`
+   - Labels: e.g. `linux docker`
+   - Launch method: *Launch agents via SSH* — Host: the agent's IP, Credentials: the one from step 1, Host Key Verification Strategy: *Manually trusted key Verification Strategy*
+3. **Manage Jenkins → Nodes → Built-In Node → Configure.** Set **Number of executors** to `0`. This is what actually stops jobs from scheduling on the controller — adding an agent alone doesn't do it.
 
 ## Using Jenkins
 

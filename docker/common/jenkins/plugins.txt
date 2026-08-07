@@ -1,2 +1,3 @@
 pipeline-stage-view
 pipeline-github
+ssh-slaves

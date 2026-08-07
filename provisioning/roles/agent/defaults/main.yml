@@ -1,0 +1,4 @@
+---
+agent_user: jenkins
+agent_home: /home/jenkins
+agent_ssh_key_path: "{{ playbook_dir }}/files/agent_rsa"
