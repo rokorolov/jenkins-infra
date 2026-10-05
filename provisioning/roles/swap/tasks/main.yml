@@ -11,7 +11,7 @@
 -   name: Set permissions on swap file
     ansible.builtin.file:
         path: "{{ swap_file }}"
-        mode: 0600
+        mode: '0600'
 
 -   name: Make swap
     ansible.builtin.command: mkswap {{ swap_file }}
@@ -24,7 +24,8 @@
         line: "{{ swap_file }} none swap sw 0 0"
 
 -   name: Turn on swap
-    ansible.builtin.command: swapon -a
+    ansible.builtin.command: swapon {{ swap_file }}
+    when: not swap_file_check.stat.exists
 
 -   name: Set swapiness
     ansible.posix.sysctl:

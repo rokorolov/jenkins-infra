@@ -1,4 +1,6 @@
 ---
-roles:
-  - name: geerlingguy.certbot
-    version: "5.4.1"
+collections:
+  - name: ansible.posix
+    version: ">=2.2.0,<3.0.0"
+  - name: community.general
+    version: ">=13.0.0,<14.0.0"

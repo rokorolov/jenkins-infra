@@ -1,0 +1,8 @@
+---
+-   name: Reload Caddy
+    ansible.builtin.shell: |
+        if [ -n "$(docker ps -q -f name=^jenkins-caddy-1$ -f status=running)" ]; then
+            docker exec jenkins-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile && echo reloaded
+        fi
+    register: caddy_reload
+    changed_when: "'reloaded' in caddy_reload.stdout"

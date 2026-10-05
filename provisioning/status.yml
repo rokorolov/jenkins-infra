@@ -1,0 +1,69 @@
+---
+-   name: Jenkins stack status
+    hosts: manager
+    remote_user: root
+    gather_facts: false
+    tasks:
+        -   name: Docker container status
+            ansible.builtin.shell: !unsafe |
+                if command -v docker >/dev/null 2>&1; then
+                    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+                else
+                    echo "Docker not installed (run: make server)"
+                fi
+            changed_when: false
+            register: docker_ps
+
+        -   name: Disk usage
+            ansible.builtin.command: df -h /
+            changed_when: false
+            register: disk_df
+
+        -   name: UFW rules
+            ansible.builtin.shell: |
+                if command -v ufw >/dev/null 2>&1; then
+                    ufw status
+                else
+                    echo "UFW not installed (run: make server)"
+                fi
+            changed_when: false
+            register: ufw_out
+
+        -   name: Days until Jenkins certificate expires
+            ansible.builtin.shell: |
+                expiry=$(openssl s_client -connect 127.0.0.1:443 \
+                    -servername {{ jenkins_domain }} </dev/null 2>/dev/null \
+                    | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+                [ -z "$expiry" ] && echo "no certificate" && exit 0
+                echo $(( ( $(date -d "$expiry" +%s) - $(date +%s) ) / 86400 )) days remaining
+            changed_when: false
+            register: jenkins_cert
+
+        -   name: Check Jenkins reachability
+            ansible.builtin.uri:
+                url: "https://{{ jenkins_domain }}/login"
+                status_code: 200
+                validate_certs: true
+            register: jenkins_http
+            delegate_to: localhost
+            failed_when: false
+
+        -   name: Containers
+            ansible.builtin.debug:
+                msg: "{{ docker_ps.stdout_lines }}"
+
+        -   name: Disk
+            ansible.builtin.debug:
+                msg: "{{ disk_df.stdout_lines }}"
+
+        -   name: Firewall
+            ansible.builtin.debug:
+                msg: "{{ ufw_out.stdout_lines }}"
+
+        -   name: TLS certificate
+            ansible.builtin.debug:
+                msg: "{{ jenkins_domain }}: {{ jenkins_cert.stdout | trim }}"
+
+        -   name: Jenkins health (from controller)
+            ansible.builtin.debug:
+                msg: "{{ jenkins_domain }}/login → {{ 'unreachable' if jenkins_http.status | default(-1) == -1 else 'HTTP ' ~ jenkins_http.status }}"

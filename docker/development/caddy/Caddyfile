@@ -1,0 +1,7 @@
+{
+	auto_https off
+}
+
+:8000 {
+	reverse_proxy jenkins:8080
+}

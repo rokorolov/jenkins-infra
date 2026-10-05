@@ -1,0 +1,23 @@
+---
+-   name: Show Jenkins stack logs
+    hosts: manager
+    remote_user: root
+    gather_facts: false
+    vars:
+        tail_lines: "{{ lines | default(200) }}"
+    tasks:
+        -   name: Get container logs
+            ansible.builtin.shell: "docker logs {{ item }} --tail {{ tail_lines }} 2>&1"
+            changed_when: false
+            register: container_logs
+            loop:
+                - jenkins-jenkins-1
+                - jenkins-caddy-1
+                - jenkins-docker-1
+
+        -   name: "Container logs (last {{ tail_lines }} lines)"
+            ansible.builtin.debug:
+                msg: "{{ item.stdout_lines }}"
+            loop: "{{ container_logs.results }}"
+            loop_control:
+                label: "{{ item.item }}"

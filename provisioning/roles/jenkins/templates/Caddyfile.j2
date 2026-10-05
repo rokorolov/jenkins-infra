@@ -1,0 +1,8 @@
+{
+	email {{ acme_email }}
+}
+
+{{ jenkins_domain }} {
+	header Strict-Transport-Security "max-age=63072000"
+	reverse_proxy jenkins:8080
+}

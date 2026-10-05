@@ -3,9 +3,14 @@
     hosts: manager
     remote_user: root
     roles:
+        - ssh-hardening
+        - security-updates
+        - ufw
         - swap
         - docker
         -   role: docker-cache
             vars:
                 config_path: /etc/docker/dind-daemon.json
+                docker_cache_dind_container: jenkins-docker-1
+        - create-deploy-user
         - jenkins

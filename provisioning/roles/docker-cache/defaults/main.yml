@@ -1,2 +1,6 @@
+---
 config_path: /etc/docker/daemon.json
 cache_registry: ""
+# When set, config_path belongs to this Docker-in-Docker container instead of
+# the host daemon, so the change is applied by restarting the container.
+docker_cache_dind_container: ""
