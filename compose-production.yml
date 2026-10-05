@@ -31,12 +31,10 @@ services:
             context: ./docker/common/jenkins
         restart: always
         environment:
-            DOCKER_HOST: tcp://docker:2376
-            DOCKER_CERT_PATH: /certs/client
-            DOCKER_TLS_VERIFY: 1
+            JENKINS_AGENT_EXECUTORS: ${JENKINS_AGENT_EXECUTORS:-2}
         volumes:
             - jenkins-data:/var/jenkins_home
-            - docker-certs:/certs/client:ro
+            - agent-keys:/etc/jenkins-agent-keys:ro
         healthcheck:
             test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8080/login || exit 1"]
             interval: 30s
@@ -44,7 +42,37 @@ services:
             retries: 3
             start_period: 120s
         depends_on:
-            - docker
+            agent-keys:
+                condition: service_completed_successfully
+        logging: *logging
+
+    agent:
+        build:
+            context: ./docker/common/agent
+        restart: always
+        environment:
+            DOCKER_HOST: tcp://docker:2376
+            DOCKER_CERT_PATH: /certs/client
+            DOCKER_TLS_VERIFY: 1
+        volumes:
+            - agent-keys:/etc/jenkins-agent-keys:ro
+            - agent-workspace:/home/jenkins/agent
+            - docker-certs:/certs/client:ro
+        depends_on:
+            agent-keys:
+                condition: service_completed_successfully
+            docker:
+                condition: service_started
+        logging: *logging
+
+    # Generates the controller-to-agent SSH key pair once per installation.
+    agent-keys:
+        build:
+            context: ./docker/common/agent
+        entrypoint: ["generate-agent-key"]
+        user: jenkins
+        volumes:
+            - agent-keys:/etc/jenkins-agent-keys
         logging: *logging
 
     docker:
@@ -55,7 +83,8 @@ services:
             DOCKER_TLS_CERTDIR: /certs
         volumes:
             - /etc/docker/dind-daemon.json:/etc/docker/daemon.json:ro
-            - jenkins-data:/var/jenkins_home
+            # Same path as in the agent, so pipelines can bind-mount their workspace.
+            - agent-workspace:/home/jenkins/agent
             - docker-certs:/certs/client
             - docker-data:/var/lib/docker
         healthcheck:
@@ -68,6 +97,8 @@ services:
 
 volumes:
     jenkins-data:
+    agent-workspace:
+    agent-keys:
     docker-certs:
     docker-data:
     caddy-data:

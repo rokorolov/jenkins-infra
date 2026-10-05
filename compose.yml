@@ -14,14 +14,38 @@ services:
             context: ./docker/common/jenkins
         restart: always
         environment:
+            JENKINS_AGENT_EXECUTORS: ${JENKINS_AGENT_EXECUTORS:-2}
+        volumes:
+            - jenkins-data:/var/jenkins_home
+            - agent-keys:/etc/jenkins-agent-keys:ro
+        depends_on:
+            agent-keys:
+                condition: service_completed_successfully
+
+    agent:
+        build:
+            context: ./docker/common/agent
+        environment:
             DOCKER_HOST: tcp://docker:2376
             DOCKER_CERT_PATH: /certs/client
             DOCKER_TLS_VERIFY: 1
         volumes:
-            - jenkins-data:/var/jenkins_home
+            - agent-keys:/etc/jenkins-agent-keys:ro
+            - agent-workspace:/home/jenkins/agent
             - docker-certs:/certs/client:ro
         depends_on:
-            - docker
+            agent-keys:
+                condition: service_completed_successfully
+            docker:
+                condition: service_started
+
+    agent-keys:
+        build:
+            context: ./docker/common/agent
+        entrypoint: ["generate-agent-key"]
+        user: jenkins
+        volumes:
+            - agent-keys:/etc/jenkins-agent-keys
 
     docker:
         image: docker:29.6.1-dind
@@ -29,11 +53,13 @@ services:
         environment:
             DOCKER_TLS_CERTDIR: /certs
         volumes:
-            - jenkins-data:/var/jenkins_home
+            - agent-workspace:/home/jenkins/agent
             - docker-certs:/certs/client
             - docker-data:/var/lib/docker
 
 volumes:
     jenkins-data:
+    agent-workspace:
+    agent-keys:
     docker-certs:
     docker-data:

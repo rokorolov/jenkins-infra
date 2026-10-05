@@ -23,18 +23,19 @@ Internet
 Caddy (80/443)
    │  Automatic TLS, HTTP→HTTPS redirect
    ▼
-Jenkins (8080)
-   │  Docker CLI + Buildx + Compose
+Jenkins controller (8080)            0 executors - no builds run here
    │
-   ├── tcp://docker:2376 (TLS) ──────────▶ Docker DinD
-   │                                         Isolated daemon for pipeline builds
-   │                                         daemon.json ← host: /etc/docker/dind-daemon.json
+   │  SSH (internal network)
+   ▼
+Build agent                          Runs every build; Docker CLI + Buildx + Compose
    │
-   └── (optional) registry mirror ────────▶ Docker Registry Mirror
-                                             Configured via cache_registry variable
+   └── tcp://docker:2376 (TLS) ──────▶ Docker DinD
+                                         Isolated daemon for pipeline builds
+                                         daemon.json ← host: /etc/docker/dind-daemon.json
+                                         (optional) Docker Hub mirror via cache_registry
 ```
 
-Jenkins communicates with a Docker-in-Docker sidecar over mutual TLS on port 2376. Certificates are generated automatically by the DinD container and shared via a named volume. The Caddyfile is rendered by Ansible and mounted into the container from the host - it is not part of the deployed application files. Caddy obtains and renews TLS certificates itself and stores them in the `caddy-data` volume.
+Builds run on a separate agent container, not inside the controller. The controller connects to the agent over SSH on the internal Compose network, so no extra port is opened, and the agent talks to a Docker-in-Docker sidecar over mutual TLS on port 2376. The agent node, its SSH credential, and the controller's executor count are declared in `docker/common/jenkins/casc.yaml` and applied by the Configuration as Code plugin on every start - no manual setup in the UI. Certificates are generated automatically by the DinD container and shared with the agent via a named volume. The controller has no Docker access at all. The Caddyfile is rendered by Ansible and mounted into the container from the host - it is not part of the deployed application files. Caddy obtains and renews TLS certificates itself and stores them in the `caddy-data` volume.
 
 ## Prerequisites
 
@@ -47,7 +48,7 @@ Jenkins communicates with a Docker-in-Docker sidecar over mutual TLS on port 237
 | Disk free on `/` | 10 GB | 40 GB |
 | Network | 1 public IP, ports 80 and 443 open | - |
 
-Jenkins itself needs about 1 GB of RAM; the rest goes to pipeline builds inside the DinD daemon. Disk usage grows with Jenkins build history and with the images and build cache that pipelines leave in DinD - see [DinD pruning cron](#dind-pruning-cron).
+The Jenkins controller needs about 1 GB of RAM; the rest goes to the build agent and the containers your pipelines start in DinD. Disk usage grows with Jenkins build history and with the images and build cache that pipelines leave in DinD - see [DinD pruning cron](#dind-pruning-cron).
 
 ### Supported operating systems
 
@@ -182,6 +183,19 @@ Retrieve the initial admin password from the production instance:
 cd provisioning && ./provision make show-initial-password
 ```
 
+### 8. Build agent
+
+Nothing to do - the agent is configured automatically. On the first deploy, a one-shot `agent-keys` container generates an SSH key pair in the `agent-keys` volume, the Configuration as Code plugin registers the node `agent` (label `docker`) with that key, and sets the built-in node to 0 executors. Its node page under **Manage Jenkins → Nodes** shows it online once Jenkins has started.
+
+The agent runs 2 builds in parallel by default. To change that, set `JENKINS_AGENT_EXECUTORS` in the stack's `.env` file on the server, which `make deploy` never overwrites, then redeploy:
+
+```bash
+ssh deploy@<server-ip> -p <ssh-port> 'echo "JENKINS_AGENT_EXECUTORS=4" >> jenkins/.env'
+make deploy HOST=<server-ip> PORT=<ssh-port>
+```
+
+Settings declared in `casc.yaml` - the agent node, its credential, and the built-in node's executor count - are re-applied on every restart, so changes made to them in the UI do not last. Change `casc.yaml` instead and redeploy.
+
 ## Using Jenkins
 
 ### First login
@@ -202,6 +216,8 @@ Plugins are baked into the Docker image via `docker/common/jenkins/plugins.txt` 
 make deploy HOST=<server-ip> PORT=<ssh-port>
 ```
 
+`configuration-as-code` and `ssh-slaves` are required by the build agent setup - do not remove them.
+
 Plugins can also be installed and updated in **Manage Jenkins → Plugins**. They are stored in the `jenkins-data` volume and survive redeploys: the image never downgrades a plugin that was updated in the UI. Removing a plugin from `plugins.txt` does not uninstall it from a running Jenkins - uninstall it in the UI.
 
 ### Connecting pipeline jobs to the Docker registry mirror
@@ -212,9 +228,11 @@ If you set `cache_registry` in the inventory, the DinD daemon is configured to p
 
 - **SSH:** `make server` disables SSH password logins (`PasswordAuthentication no`, `KbdInteractiveAuthentication no`) and limits root to key logins (`PermitRootLogin prohibit-password`). The settings live in `/etc/ssh/sshd_config.d/01-hardening.conf`, which sorts before cloud-init's `50-cloud-init.conf` because sshd uses the first value it reads for these options. The file is validated with `sshd -t` before it is installed, and the run fails if `sshd -T` still reports password logins. Set `ssh_hardening: false` in `hosts.yml` to keep password logins; the next `make server` removes the file again.
 - **Security updates:** `make server` enables `unattended-upgrades` with the distribution's default origins. Security fixes are installed daily; the Docker repository is not included and the server is never rebooted automatically.
+- **Build isolation:** Builds run on the agent container, never in the controller (built-in node set to 0 executors). The controller has no Docker access, and DinD mounts only the agent's workspace volume - a pipeline cannot reach `/var/jenkins_home`, where the controller keeps its credentials and secrets. The agent still shares the server with the controller, so a runaway build can slow Jenkins down.
+- **Agent SSH key:** The controller-to-agent key pair is generated on the server, in the `agent-keys` volume, and never leaves it. The private key only grants SSH access to the agent container itself. The controller does not verify the agent's host key: the agent's host keys change whenever its container is recreated, and the connection never leaves the private Compose network.
 - **Firewall:** UFW is configured with a default-deny incoming policy; only SSH, HTTP, and HTTPS are open. Ports published by Docker bypass UFW, so never publish Jenkins (8080) or the DinD daemon (2376) in `compose-production.yml`.
 - **TLS:** Caddy serves TLS 1.2/1.3 only and issues and renews certificates automatically. HSTS with a two-year max-age is enforced.
-- **DinD privilege:** The `docker` container runs with `--privileged`. This is required for Docker-in-Docker. The DinD container is not exposed to the host network - Jenkins connects to it over the internal Compose network via TLS.
+- **DinD privilege:** The `docker` container runs with `--privileged`. This is required for Docker-in-Docker. The DinD container is not exposed to the host network - only the agent connects to it, over the internal Compose network via TLS.
 - **Deploy user:** The `deploy` system user has no password (`!` in `/etc/shadow`) and belongs to the `docker` group. SSH access is via authorized key only.
 - **Caddy config:** The Caddyfile is managed by Ansible and mounted read-only (`/etc/jenkins/caddy:/etc/caddy:ro`). It is not part of the deployed application files and cannot be overwritten by a deploy.
 - **Credentials:** `provisioning/hosts.yml` is listed in `.gitignore`. Never commit it - it contains the server IP, SSH port, and domain name.
@@ -311,7 +329,7 @@ cd provisioning && ./provision make status
 
 ### View container logs
 
-Shows the last 200 lines of logs from the Jenkins, Caddy, and DinD containers.
+Shows the last 200 lines of logs from the Jenkins, agent, Caddy, and DinD containers.
 
 ```bash
 cd provisioning && ./provision make logs
@@ -358,9 +376,10 @@ make deploy HOST=<server-ip> PORT=<ssh-port>
 |---|---|---|
 | `caddy` | `2.11.6-alpine` | Caddy 2 stable series. |
 | `docker` | `29.6.1-dind` | Pin to `major.minor.patch` for full reproducibility. |
-| `jenkins/jenkins` | `2.555.3-jdk21` | LTS release, pinned to `major.minor.patch-jdkN`. Avoid the floating `lts-jdk21` tag - it changes silently on every LTS release. |
+| `jenkins/jenkins` | `2.580.1-jdk21` | LTS release, pinned to `major.minor.patch-jdkN`. Avoid the floating `lts-jdk21` tag - it changes silently on every LTS release. |
+| `jenkins/ssh-agent` | `9.1.0-jdk21` | Agent image for the same Java version as the controller. Update it together with Jenkins. |
 
-The Jenkins image tag is set in `docker/common/jenkins/Dockerfile`.
+The Jenkins tag is set in `docker/common/jenkins/Dockerfile` and the agent tag in `docker/common/agent/Dockerfile`.
 
 ### Update Ansible Galaxy collections
 
@@ -431,11 +450,11 @@ Print it with:
 make show-initial-password
 ```
 
-### Docker-in-Docker in development
+### Build agent in development
 
-The `docker` service in `compose.yml` runs a Docker-in-Docker daemon. Jenkins connects to it via the `DOCKER_HOST=tcp://docker:2376` environment variable. TLS certificates are generated automatically on first start and shared with Jenkins via the `docker-certs` volume.
+The dev stack configures the agent the same way as production: `make up` generates the key pair, starts the agent, and Jenkins registers it automatically.
 
-Pipeline jobs that run `docker build`, `docker push`, or `docker compose` commands execute inside this isolated daemon - they do not touch the host Docker socket.
+The agent connects to the `docker` service, a Docker-in-Docker daemon, via `DOCKER_HOST=tcp://docker:2376`. TLS certificates are generated automatically on first start and shared with the agent via the `docker-certs` volume. Pipeline jobs that run `docker build`, `docker push`, or `docker compose` commands execute inside this isolated daemon - they do not touch the host Docker socket.
 
 ## Project structure
 
@@ -446,8 +465,13 @@ Pipeline jobs that run `docker build`, `docker push`, or `docker compose` comman
 ├── Makefile                         # Local dev and deploy commands
 ├── docker/
 │   ├── common/jenkins/
-│   │   ├── Dockerfile               # Jenkins LTS + Docker CLI + Buildx + Compose + plugins
-│   │   └── plugins.txt              # Jenkins plugins installed at image build time
+│   │   ├── Dockerfile               # Jenkins LTS controller + plugins
+│   │   ├── plugins.txt              # Jenkins plugins installed at image build time
+│   │   └── casc.yaml                # Configuration as Code: agent node, SSH credential, 0 controller executors
+│   ├── common/agent/
+│   │   ├── Dockerfile               # Build agent: SSH agent + Docker CLI + Buildx + Compose
+│   │   ├── entrypoint.sh            # Authorizes the controller's public key, then starts sshd
+│   │   └── generate-key.sh          # Creates the SSH key pair once (agent-keys service)
 │   └── development/caddy/Caddyfile  # Dev Caddy config (no TLS, proxies to port 8080)
 └── provisioning/
     ├── Dockerfile                   # Provisioning toolbox image
@@ -461,7 +485,7 @@ Pipeline jobs that run `docker build`, `docker push`, or `docker compose` comman
     ├── authorize.yml                # SSH key authorization playbook
     ├── upgrade.yml                  # System upgrade playbook (reboot only with REBOOT=true)
     ├── status.yml                   # Live server status (containers, disk, firewall, TLS, Jenkins)
-    ├── logs.yml                     # Tail Jenkins, Caddy, and DinD container logs
+    ├── logs.yml                     # Tail Jenkins, agent, Caddy, and DinD container logs
     └── roles/
         ├── ssh-hardening/           # Disables SSH password logins via an sshd_config.d drop-in
         ├── security-updates/        # Enables daily unattended security updates

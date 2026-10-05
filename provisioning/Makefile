@@ -8,7 +8,7 @@ help:
 	@echo "  build                          Build the provisioning toolbox Docker image"
 	@echo "  preflight                      Verify inventory variables, SSH connectivity, disk space, and DNS"
 	@echo "  status                         Show live server status: containers, disk, firewall, TLS, Jenkins health"
-	@echo "  logs                           Show last 200 lines of Jenkins, Caddy and DinD logs (override: LINES=500)"
+	@echo "  logs                           Show last 200 lines of Jenkins, agent, Caddy and DinD logs (override: LINES=500)"
 	@echo "  requirements                   Install Ansible Galaxy collections (local Ansible only)"
 	@echo "  server                         Provision the server (SSH hardening, firewall, swap, docker, Caddy config)"
 	@echo "  authorize                      Authorize SSH keys for the deploy user"

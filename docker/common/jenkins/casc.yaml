@@ -1,0 +1,34 @@
+jenkins:
+  numExecutors: 0
+  nodes:
+    - permanent:
+        name: agent
+        labelString: docker
+        mode: NORMAL
+        numExecutors: ${JENKINS_AGENT_EXECUTORS:-2}
+        remoteFS: /home/jenkins/agent
+        retentionStrategy: always
+        launcher:
+          ssh:
+            host: agent
+            port: 22
+            credentialsId: agent-ssh
+            launchTimeoutSeconds: 60
+            maxNumRetries: 10
+            retryWaitTime: 15
+            # The agent's host keys are regenerated whenever its container is
+            # recreated, and the connection never leaves the Compose network.
+            sshHostKeyVerificationStrategy: nonVerifyingKeyVerificationStrategy
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - basicSSHUserPrivateKey:
+              scope: SYSTEM
+              id: agent-ssh
+              username: jenkins
+              description: SSH key for the build agent container
+              privateKeySource:
+                directEntry:
+                  privateKey: ${readFile:/etc/jenkins-agent-keys/id_ed25519}

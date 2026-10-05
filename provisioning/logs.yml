@@ -12,6 +12,7 @@
             register: container_logs
             loop:
                 - jenkins-jenkins-1
+                - jenkins-agent-1
                 - jenkins-caddy-1
                 - jenkins-docker-1
 
