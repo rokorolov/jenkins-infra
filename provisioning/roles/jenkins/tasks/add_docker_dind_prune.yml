@@ -2,6 +2,6 @@
 -   name: Set periodic Docker Dind prune
     ansible.builtin.cron:
         name: docker-dind-prune
-        job: '/bin/sh -c "cd {{ jenkins_path }} && docker compose exec docker docker system prune -af --filter until=360h"'
+        job: '/bin/sh -c "cd {{ jenkins_path }} && docker compose -p jenkins exec -T docker docker system prune -af --filter until=360h"'
         minute: '0'
         hour: '2'

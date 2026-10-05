@@ -1,0 +1,35 @@
+---
+-   name: Configure UFW firewall
+    become: true
+    block:
+        -   name: Install UFW
+            ansible.builtin.apt:
+                name: ufw
+                state: present
+
+        -   name: Allow SSH
+            community.general.ufw:
+                rule: allow
+                port: "{{ ansible_port | default(22) | string }}"
+                proto: tcp
+
+        -   name: Allow HTTP
+            community.general.ufw:
+                rule: allow
+                port: "80"
+                proto: tcp
+
+        -   name: Allow HTTPS
+            community.general.ufw:
+                rule: allow
+                port: "443"
+                proto: "{{ item }}"
+            loop:
+                - tcp
+                - udp
+
+        -   name: Enable UFW with default deny incoming
+            community.general.ufw:
+                state: enabled
+                default: deny
+                direction: incoming

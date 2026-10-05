@@ -3,3 +3,13 @@
     ansible.builtin.systemd:
         name: docker
         state: reloaded
+    when: docker_cache_dind_container | length == 0
+
+-   name: Restart DinD
+    ansible.builtin.shell: |
+        if [ -n "$(docker ps -q -f name=^{{ docker_cache_dind_container }}$ -f status=running)" ]; then
+            docker restart {{ docker_cache_dind_container }} >/dev/null && echo restarted
+        fi
+    register: dind_restart
+    changed_when: "'restarted' in dind_restart.stdout"
+    when: docker_cache_dind_container | length > 0

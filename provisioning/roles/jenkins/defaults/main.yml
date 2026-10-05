@@ -1,2 +1,3 @@
 ---
 jenkins_path: /home/deploy/jenkins
+jenkins_caddy_config_path: /etc/jenkins/caddy

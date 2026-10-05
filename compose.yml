@@ -1,11 +1,11 @@
 services:
-    nginx:
-        image: nginx:1.30.3-alpine3.23
+    caddy:
+        image: caddy:2.11.6-alpine
         restart: always
         ports:
             - "8000:8000"
         volumes:
-            - ./docker/development/nginx/conf.d:/etc/nginx/conf.d
+            - ./docker/development/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
         depends_on:
             - jenkins
 

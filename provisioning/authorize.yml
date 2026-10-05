@@ -6,4 +6,8 @@
         -   name: Add user authorized key
             ansible.posix.authorized_key:
                 user: deploy
-                key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+                key: "{{ lookup('file', item) }}"
+            with_first_found:
+                - "~/.ssh/id_ed25519.pub"
+                - "~/.ssh/id_ecdsa.pub"
+                - "~/.ssh/id_rsa.pub"

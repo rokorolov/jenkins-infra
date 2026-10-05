@@ -41,24 +41,18 @@ endif
 ifndef PORT
 	$(error PORT is not set. Usage: make deploy HOST=<ip> PORT=<port>)
 endif
-	@echo "Starting Jenkins deployment..."
+	@echo "Starting deployment to $(HOST):$(PORT)..."
 	@set -e; \
 	echo "Transferring files..."; \
+	ssh deploy@$(HOST) -p $(PORT) 'mkdir -p jenkins && rm -rf jenkins/docker.new'; \
 	scp -P $(PORT) compose-production.yml deploy@$(HOST):jenkins/compose.yml.new; \
 	scp -P $(PORT) -r docker deploy@$(HOST):jenkins/docker.new; \
-	echo "Configuring and deploying..."; \
+	echo "Deploying services..."; \
 	ssh deploy@$(HOST) -p $(PORT) 'set -e; cd jenkins && { \
-		mv -f compose.yml.new compose.yml; \
 		rm -rf docker && mv docker.new docker; \
-		echo "COMPOSE_PROJECT_NAME=jenkins" > .env; \
-		echo "Stopping existing services..."; \
-		docker compose down --remove-orphans; \
-		echo "Pulling latest images..."; \
-		docker compose pull; \
-		echo "Building images..."; \
-		docker compose build --pull; \
-		echo "Starting services..."; \
-		docker compose up -d; \
-		echo "Services started successfully"; \
-	}'
-	@echo "Jenkins deployment completed successfully"
+		docker compose -p jenkins -f compose.yml.new pull --ignore-buildable; \
+		docker compose -p jenkins -f compose.yml.new build --pull; \
+		mv -f compose.yml.new compose.yml; \
+		docker compose -p jenkins up -d --wait --wait-timeout 300 --remove-orphans; \
+	}'; \
+	echo "Deployment completed successfully"

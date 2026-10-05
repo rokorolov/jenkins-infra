@@ -1,3 +1,11 @@
--   import_tasks: create_deploy_user.yml
+---
+-   name: Validate required variables
+    ansible.builtin.assert:
+        that:
+            - jenkins_domain is defined and jenkins_domain | length > 0
+            - acme_email is defined and acme_email | length > 0
+        fail_msg: >
+            jenkins_domain and acme_email must be set in inventory (hosts.yml)
+
 -   import_tasks: add_docker_dind_prune.yml
--   import_tasks: deploy_nginx_config.yml
+-   import_tasks: deploy_caddy_config.yml

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE="jenkins-provision"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+: "${HOME:?HOME is not set — cannot mount ~/.ssh}"
+
+if ! docker image inspect "${IMAGE}" &>/dev/null; then
+    echo "Image '${IMAGE}' not found. Build it first:" >&2
+    echo "  cd provisioning && make build" >&2
+    exit 1
+fi
+
+args=(--rm --init -i \
+    -v "${SCRIPT_DIR}:/workspace" \
+    -v "${HOME}/.ssh:/root/.ssh:ro")
+
+# Allocate a pseudo-TTY only when stdin is a terminal
+[[ -t 0 ]] && args+=(-t)
+
+# SSH agent forwarding
+# On macOS, Docker Desktop cannot bind-mount the launchd SSH agent socket directly.
+# Use key files from the ~/.ssh mount instead, or configure Docker Desktop's
+# SSH agent proxy (see: https://docs.docker.com/desktop/features/ssh/)
+if [[ -n "${SSH_AUTH_SOCK:-}" && -S "${SSH_AUTH_SOCK}" ]]; then
+    args+=(-v "${SSH_AUTH_SOCK}:${SSH_AUTH_SOCK}" -e "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}")
+fi
+
+# Forward any ANSIBLE_* overrides set in the caller's environment
+while IFS= read -r var; do
+    args+=(-e "$var")
+done < <(env | grep '^ANSIBLE_' || true)
+
+exec docker run "${args[@]}" "${IMAGE}" "$@"

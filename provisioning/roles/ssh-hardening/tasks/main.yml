@@ -1,0 +1,56 @@
+---
+-   name: Validate ssh_hardening
+    ansible.builtin.assert:
+        that: ssh_hardening | string | lower in ['true', 'false']
+        fail_msg: "ssh_hardening must be true or false. Received: {{ ssh_hardening }}"
+
+# Sorts before cloud-init's 50-cloud-init.conf: for these single-value
+# options sshd uses the first value it reads.
+-   name: Disable SSH password authentication
+    ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/01-hardening.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+            PasswordAuthentication no
+            KbdInteractiveAuthentication no
+            PermitRootLogin prohibit-password
+        validate: /usr/sbin/sshd -t -f %s
+    notify: Reload SSH
+    when: ssh_hardening | bool
+
+-   name: Remove SSH hardening
+    ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d/01-hardening.conf
+        state: absent
+    notify: Reload SSH
+    when: not (ssh_hardening | bool)
+
+-   name: Validate full sshd configuration
+    ansible.builtin.command: /usr/sbin/sshd -t
+    changed_when: false
+    check_mode: false
+
+-   name: Apply SSH configuration now
+    ansible.builtin.meta: flush_handlers
+
+-   name: Verify password logins are disabled
+    when: ssh_hardening | bool
+    block:
+        -   name: Read effective sshd settings
+            ansible.builtin.command: /usr/sbin/sshd -T
+            register: sshd_effective
+            changed_when: false
+            check_mode: false
+
+        -   name: Assert password logins are disabled
+            ansible.builtin.assert:
+                that:
+                    - "'passwordauthentication no' in sshd_effective.stdout_lines"
+                    - "'kbdinteractiveauthentication no' in sshd_effective.stdout_lines"
+                    - "'permitrootlogin without-password' in sshd_effective.stdout_lines or 'permitrootlogin prohibit-password' in sshd_effective.stdout_lines"
+                fail_msg: >
+                    sshd still allows password logins. Another file in /etc/ssh/sshd_config.d/
+                    that sorts before 01-hardening.conf, or a Match block, overrides these settings.
+            when: not ansible_check_mode

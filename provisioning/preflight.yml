@@ -1,0 +1,42 @@
+---
+-   name: Preflight checks
+    hosts: manager
+    remote_user: root
+    tasks:
+        -   name: Validate required inventory variables
+            ansible.builtin.assert:
+                that:
+                    - jenkins_domain is defined and jenkins_domain | length > 0
+                    - acme_email is defined and acme_email | length > 0
+                fail_msg: >
+                    One or more required variables are missing from hosts.yml.
+                    Copy hosts.yml.dist to hosts.yml and fill in all values before proceeding.
+
+        -   name: Confirm SSH connectivity
+            ansible.builtin.debug:
+                msg: "Connected to {{ ansible_host }} on port {{ ansible_port | default(22) }} — OK"
+
+        -   name: Check available disk space
+            ansible.builtin.shell: df -BG / | awk 'NR==2 {gsub("G",""); print $4}'
+            register: disk_free
+            changed_when: false
+
+        -   name: Assert sufficient disk space
+            ansible.builtin.assert:
+                that: disk_free.stdout | int >= 10
+                fail_msg: >
+                    Insufficient disk space: {{ disk_free.stdout }}GB free on /.
+                    At least 10GB is required; 40GB or more is recommended.
+
+        -   name: Verify DNS record resolves to this server
+            ansible.builtin.shell: |
+                resolved=$(getent hosts {{ jenkins_domain }} | awk '{print $1}')
+                if [ -z "$resolved" ]; then
+                    echo "{{ jenkins_domain }} does not resolve — DNS record may be missing or not yet propagated"
+                    exit 1
+                fi
+                if [ "$resolved" != "{{ ansible_facts['default_ipv4']['address'] }}" ]; then
+                    echo "{{ jenkins_domain }} resolves to '${resolved}', expected {{ ansible_facts['default_ipv4']['address'] }}"
+                    exit 1
+                fi
+            changed_when: false
